@@ -1,0 +1,33 @@
+[core]
+    editor = vim
+[alias]
+    a = add
+    co = checkout
+    st = status
+    ci = commit --verbose
+    ca = commit -a --verbose
+    cm = commit -m
+    cp = cherry-pick
+    cl = clone
+    br = branch
+    diff = diff --word-diff
+    le = log --oneline --decorate
+    ls = log --pretty=format:"%C(cyan)%h%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate
+    ll = log --pretty=format:"%C(cyan)%h%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate --numstat
+    lds = log --pretty=format:"%C(cyan)%h\\ %ad%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate --date=short
+    ld = log --pretty=format:"%C(cyan)%h\\ %ad%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate --date=relative
+    dl = "!git ll -1"
+    diffc = diff --cached
+    logg = log --color --graph --pretty=format:'%C(cyan dim)%h%Creset -%C(red bold)%d%Creset %s %C(yellow)(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+    loggu = log --color --graph --pretty=format:'%C(cyan dim)%h%Creset -%C(red bold)%d%Creset %s %C(yellow)(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit @{u}..
+    hist = log --pretty=format:\"%h %ad | %s%d [%an]\" --graph --date=short
+    type = cat-file -t
+    dump = cat-file -p
+[pull]
+    rebase = true
+[push]
+    default = upstream
+[rebase]
+    autosquash = true
+[rerere]
+    enabled = true

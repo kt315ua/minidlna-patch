@@ -1,0 +1,6 @@
+minidlna-dmo (1:1.3.0-dmo20220612) unstable; urgency=medium
+
+  * Add disk/track or seasons/episodes into the titles for Audios and Videos.
+
+ -- Serhii Horelskyi <droidkt315@gmail.com>  Sat, 12 Jun 2022 00:00:00 +0000
+

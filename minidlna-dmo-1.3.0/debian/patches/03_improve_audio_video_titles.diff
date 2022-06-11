@@ -1,0 +1,176 @@
+Description: Add disk/track or seasons/episodes into the titles for Audios and Videos.
+ INFO: Add disk/track or seasons/episodes into the titles for Audios and Videos if options
+ 'enable_audio_alt_titles' or 'enable_video_alt_titles' is enabled for comfort serials watching.
+ Example, if previously serial episode was displayed on DLNA clients as 'Cool second episode with cats',
+ so, now it's displayed as season + episode nubers + title: 'S01E02 - Cool second episode with cats'.
+  .
+ minidlna-dmo (1:1.3.0-dmo20220612) unstable; urgency=medium
+ .
+   * Add disk/track or seasons/episodes into the titles for Audios and Videos.
+Author: Serhii Horelskyi <droidkt315@gmail.com>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: ''
+Bug: "It's a feature"
+Bug-Debian: https://bugs.debian.org/404.html
+Bug-Ubuntu: https://launchpad.net/bugs/404.html
+Forwarded: ''
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: 2022-06-12
+
+--- minidlna-dmo-1.3.0.orig/metadata.c
++++ minidlna-dmo-1.3.0/metadata.c
+@@ -254,6 +254,7 @@ free_metadata(metadata_t *m, uint32_t fl
+ {
+ 	if( flags & FLAG_TITLE )
+ 		free(m->title);
++		free(m->_title);
+ 	if( flags & FLAG_ARTIST )
+ 		free(m->artist);
+ 	if( flags & FLAG_ALBUM )
+@@ -478,13 +479,23 @@ GetAudioMetadata(const char *path, const
+ 
+ 	album_art = find_album_art(path, song.image, song.image_size);
+ 
++    if ( GETFLAG(ALT_AUDIO_TITLE_MASK) && song.disc > 0 && song.track > 0 )
++    {
++        xasprintf(&m._title, "%d/%02d - %s", song.disc, song.track, m.title);
++        DPRINTF(E_DEBUG, L_METADATA, "SET Disk/Track found for Audio: '%d/%02d - %s'\n", song.disc, song.track, m.title);
++    }
++    else
++    {
++        xasprintf(&m._title, "%s", m.title);
++        DPRINTF(E_DEBUG, L_METADATA, "Alternative title disabled or no Disk/Track found for Audio: '%s'\n", m._title);
++    }
+ 	ret = sql_exec(db, "INSERT into DETAILS"
+ 	                   " (PATH, SIZE, TIMESTAMP, DURATION, CHANNELS, BITRATE, SAMPLERATE, DATE,"
+ 	                   "  TITLE, CREATOR, ARTIST, ALBUM, GENRE, COMMENT, DISC, TRACK, DLNA_PN, MIME, ALBUM_ART) "
+ 	                   "VALUES"
+ 	                   " (%Q, %lld, %lld, '%s', %d, %d, %d, %Q, %Q, %Q, %Q, %Q, %Q, %Q, %d, %d, %Q, '%s', %lld);",
+ 	                   path, (long long)file.st_size, (long long)file.st_mtime, m.duration, song.channels, song.bitrate,
+-	                   song.samplerate, m.date, m.title, m.creator, m.artist, m.album, m.genre, m.comment, song.disc,
++	                   song.samplerate, m.date, m._title, m.creator, m.artist, m.album, m.genre, m.comment, song.disc,
+ 	                   song.track, m.dlna_pn, song.mime?song.mime:m.mime, album_art);
+ 	if( ret != SQLITE_OK )
+ 	{
+@@ -1583,6 +1594,17 @@ video_no_dlna:
+ 	freetags(&video);
+ 	lav_close(ctx);
+
++
++    if ( GETFLAG(ALT_VIDEO_TITLE_MASK) && m.disc > 0 && m.track > 0 )
++    {
++        xasprintf(&m._title, "S%02dE%02d - %s", m.disc, m.track, m.title);
++        DPRINTF(E_DEBUG, L_METADATA, "SET Season/Episode for Video: 'S%02dE%02d - %s'\n", m.disc, m.track, m.title);
++    }
++    else
++    {
++        xasprintf(&m._title, "%s", m.title);
++        DPRINTF(E_DEBUG, L_METADATA, "Alternative title disabled or no Season/Episode found for Video: '%s'\n", m._title);
++    }
+ 	ret = sql_exec(db, "INSERT into DETAILS"
+ 	                   " (PATH, SIZE, TIMESTAMP, DURATION, DATE, CHANNELS, BITRATE, SAMPLERATE, RESOLUTION,"
+ 	                   "  TITLE, CREATOR, ARTIST, GENRE, COMMENT, DLNA_PN, MIME, ALBUM_ART, DISC, TRACK) "
+@@ -1590,7 +1612,7 @@ video_no_dlna:
+ 	                   " (%Q, %lld, %lld, %Q, %Q, %u, %u, %u, %Q, '%q', %Q, %Q, %Q, %Q, %Q, '%q', %lld, %u, %u);",
+ 	                   path, (long long)file.st_size, (long long)file.st_mtime, m.duration,
+ 	                   m.date, m.channels, m.bitrate, m.frequency, m.resolution,
+-	                   m.title, m.creator, m.artist, m.genre, m.comment, m.dlna_pn,
++	                   m._title, m.creator, m.artist, m.genre, m.comment, m.dlna_pn,
+ 	                   m.mime, album_art, m.disc, m.track);
+ 	if( ret != SQLITE_OK )
+ 	{
+--- minidlna-dmo-1.3.0.orig/metadata.h
++++ minidlna-dmo-1.3.0/metadata.h
+@@ -25,6 +25,7 @@
+ #define __METADATA_H__
+
+ typedef struct metadata_s {
++	char *       _title;
+ 	char *       title;
+ 	char *       artist;
+ 	char *       creator;
+--- minidlna-dmo-1.3.0.orig/minidlna.c
++++ minidlna-dmo-1.3.0/minidlna.c
+@@ -813,6 +813,14 @@ init(int argc, char **argv)
+ 			if (!strtobool(ary_options[i].value))
+ 				CLEARFLAG(SUBTITLES_MASK);
+ 			break;
++		case ENABLE_VIDEO_ALT_TITLES:
++			if (strtobool(ary_options[i].value))
++				SETFLAG(ALT_VIDEO_TITLE_MASK);
++			break;
++		case ENABLE_AUDIO_ALT_TITLES:
++			if (strtobool(ary_options[i].value))
++				SETFLAG(ALT_AUDIO_TITLE_MASK);
++			break;
+ 		default:
+ 			DPRINTF(E_ERROR, L_GENERAL, "Unknown option in file %s\n",
+ 				optionsfile);
+--- minidlna-dmo-1.3.0.orig/minidlna.conf
++++ minidlna-dmo-1.3.0/minidlna.conf
+@@ -95,3 +95,11 @@ model_number=1
+ # enable subtitle support by default on unknown clients.
+ # note: the default is yes
+ #enable_subtitles=yes
++
++# set this to yes to add serial seasons and episodes metadata info into titles
++# note: the default is no
++#enable_video_alt_titles=no
++
++# set this to yes to add audio discs and tracks metadata info into titles
++# note: the default is no
++#enable_audio_alt_titles=no
+--- minidlna-dmo-1.3.0.orig/minidlna.conf.5
++++ minidlna-dmo-1.3.0/minidlna.conf.5
+@@ -179,7 +179,13 @@ By default, wide symlinks are not follow
+ Set to 'no' to disable subtitle support on unknown clients.
+ By default, subtitles are enabled for unknown or generic clients.
+
++.IP "\fBenable_video_alt_titles\fP"
++Set to 'yes' to enable serial episodes support in titles.
++By default, serial episodes support is disabled.
+
++.IP "\fBenable_audio_alt_titles\fP"
++Set to 'yes' to enable audio track number support in titles.
++By default, audio track number support is disabled.
+
+ .SH VERSION
+ This manpage corresponds to minidlna version 1.3.0
+--- minidlna-dmo-1.3.0.orig/options.c
++++ minidlna-dmo-1.3.0/options.c
+@@ -68,6 +68,8 @@ static const struct {
+ 	{ WIDE_LINKS, "wide_links" },
+ 	{ TIVO_DISCOVERY, "tivo_discovery" },
+ 	{ ENABLE_SUBTITLES, "enable_subtitles" },
++	{ ENABLE_VIDEO_ALT_TITLES, "enable_video_alt_titles" },
++	{ ENABLE_AUDIO_ALT_TITLES, "enable_audio_alt_titles" },
+ };
+
+ int
+--- minidlna-dmo-1.3.0.orig/options.h
++++ minidlna-dmo-1.3.0/options.h
+@@ -61,6 +61,8 @@ enum upnpconfigoptions {
+ 	WIDE_LINKS,			/* allow following symlinks outside the defined media_dirs */
+ 	TIVO_DISCOVERY,			/* TiVo discovery protocol: bonjour or beacon. Defaults to bonjour if supported */
+ 	ENABLE_SUBTITLES,		/* Enable generic subtitle support for all clients by default */
++	ENABLE_VIDEO_ALT_TITLES,   /* Add serial seasons and episodes metadata info into titles */
++	ENABLE_AUDIO_ALT_TITLES,   /* Add audio discs and tracks metadata info into titles */
+ };
+
+ /* readoptionsfile()
+--- minidlna-dmo-1.3.0.orig/upnpglobalvars.h
++++ minidlna-dmo-1.3.0/upnpglobalvars.h
+@@ -204,6 +204,8 @@ extern uint32_t runtime_flags;
+ #define RESCAN_MASK           0x0200
+ #define SUBTITLES_MASK        0x0400
+ #define FORCE_ALPHASORT_MASK  0x0800
++#define ALT_VIDEO_TITLE_MASK  0x1000
++#define ALT_AUDIO_TITLE_MASK  0x2000
+
+ #define SETFLAG(mask)	runtime_flags |= mask
+ #define GETFLAG(mask)	(runtime_flags & mask)
